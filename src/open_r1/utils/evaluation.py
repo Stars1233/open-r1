@@ -1,7 +1,7 @@
 import subprocess
 from typing import TYPE_CHECKING, Dict, Union
 
-from .hub import get_gpu_count_for_vllm
+from .hub import get_gpu_count_for_vllm, get_param_count_from_repo_id
 
 
 if TYPE_CHECKING:
@@ -25,7 +25,11 @@ VLLM_SLURM_PREFIX = [
 
 
 def register_lighteval_task(
-    configs: Dict[str, str], eval_suite: str, task_name: str, task_list: str, num_fewshot: int = 0
+    configs: Dict[str, str],
+    eval_suite: str,
+    task_name: str,
+    task_list: str,
+    num_fewshot: int = 0,
 ):
     """Registers a LightEval task configuration.
 
@@ -63,20 +67,20 @@ SUPPORTED_BENCHMARKS = get_lighteval_tasks()
 
 
 def run_lighteval_job(
-    benchmark: str, training_args: Union["SFTConfig", "GRPOConfig"], model_args: "ModelConfig"
+    benchmark: str,
+    training_args: Union["SFTConfig", "GRPOConfig"],
+    model_args: "ModelConfig",
 ) -> None:
     task_list = LIGHTEVAL_TASKS[benchmark]
     model_name = training_args.hub_model_id
     model_revision = training_args.hub_model_revision
     # For large models >= 30b params or those running the MATH benchmark, we need to shard them across the GPUs to avoid OOM
     num_gpus = get_gpu_count_for_vllm(model_name, model_revision)
-    # FIXME: vLLM 0.8.4 hangs with lighteval and DP > 1, so we disable it for now and use TP for all evals. See https://github.com/huggingface/lighteval/issues/670
-    # if get_param_count_from_repo_id(model_name) >= 30_000_000_000:
-    #     tensor_parallel = True
-    # else:
-    #     num_gpus = 8
-    #     tensor_parallel = False
-    tensor_parallel = True
+    if get_param_count_from_repo_id(model_name) >= 30_000_000_000:
+        tensor_parallel = True
+    else:
+        num_gpus = 8
+        tensor_parallel = False
 
     cmd = VLLM_SLURM_PREFIX.copy()
     cmd_args = [
